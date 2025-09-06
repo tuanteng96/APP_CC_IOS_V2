@@ -38,11 +38,10 @@
 		B72FD14B2D1A68020097D521 /* XPZ.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72FD1482D1A68020097D521 /* XPZ.swift */; };
 		B72FD14C2D1A68020097D521 /* X_GET_OR_CACHED.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72FD1492D1A68020097D521 /* X_GET_OR_CACHED.swift */; };
 		B72FD14F2D1A687D0097D521 /* libPrinterSDK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B72FD14E2D1A68680097D521 /* libPrinterSDK.a */; };
+		B73442F42E6C2E5F00CEFBEE /* vendor.js in Resources */ = {isa = PBXBuildFile; fileRef = B73442F32E6C2E5F00CEFBEE /* vendor.js */; };
 		B7641A112E6050A900106F9D /* Framework7Icons-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = B7641A0F2E6050A900106F9D /* Framework7Icons-Regular.woff2 */; };
-		B7641A122E6050A900106F9D /* index.js in Resources */ = {isa = PBXBuildFile; fileRef = B7641A0B2E6050A900106F9D /* index.js */; };
 		B7641A132E6050A900106F9D /* index.css in Resources */ = {isa = PBXBuildFile; fileRef = B7641A092E6050A900106F9D /* index.css */; };
 		B7641A142E6050A900106F9D /* Framework7Icons-Regular.woff in Resources */ = {isa = PBXBuildFile; fileRef = B7641A0E2E6050A900106F9D /* Framework7Icons-Regular.woff */; };
-		B7641A152E6050A900106F9D /* vendor.js in Resources */ = {isa = PBXBuildFile; fileRef = B7641A0C2E6050A900106F9D /* vendor.js */; };
 		B78D29502A9706E80017C1E4 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = B78D294F2A9706E80017C1E4 /* GoogleService-Info.plist */; };
 		B7CC7AA52B57718700E268BD /* WiffiManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7CC7AA42B57718700E268BD /* WiffiManager.swift */; };
 		EF94C6E9277D500E0015CCA5 /* QrCodeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF94C6E8277D500E0015CCA5 /* QrCodeController.swift */; };
@@ -136,9 +135,8 @@
 		B72FD1492D1A68020097D521 /* X_GET_OR_CACHED.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = X_GET_OR_CACHED.swift; path = ../../X_GET_OR_CACHED.swift; sourceTree = "<group>"; };
 		B72FD14D2D1A684A0097D521 /* PrinterSDK */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrinterSDK; path = ../PrinterSDK; sourceTree = "<group>"; };
 		B72FD14E2D1A68680097D521 /* libPrinterSDK.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libPrinterSDK.a; path = ../PrinterSDK/libPrinterSDK.a; sourceTree = "<group>"; };
+		B73442F32E6C2E5F00CEFBEE /* vendor.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = vendor.js; sourceTree = "<group>"; };
 		B7641A092E6050A900106F9D /* index.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = index.css; sourceTree = "<group>"; };
-		B7641A0B2E6050A900106F9D /* index.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = index.js; sourceTree = "<group>"; };
-		B7641A0C2E6050A900106F9D /* vendor.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = vendor.js; sourceTree = "<group>"; };
 		B7641A0E2E6050A900106F9D /* Framework7Icons-Regular.woff */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Framework7Icons-Regular.woff"; sourceTree = "<group>"; };
 		B7641A0F2E6050A900106F9D /* Framework7Icons-Regular.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Framework7Icons-Regular.woff2"; sourceTree = "<group>"; };
 		B78D294F2A9706E80017C1E4 /* GoogleService-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "../../GoogleService-Info.plist"; sourceTree = "<group>"; };
@@ -320,8 +318,7 @@
 		B7641A0D2E6050A900106F9D /* js */ = {
 			isa = PBXGroup;
 			children = (
-				B7641A0B2E6050A900106F9D /* index.js */,
-				B7641A0C2E6050A900106F9D /* vendor.js */,
+				B73442F32E6C2E5F00CEFBEE /* vendor.js */,
 			);
 			path = js;
 			sourceTree = "<group>";
@@ -471,10 +468,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				B7641A112E6050A900106F9D /* Framework7Icons-Regular.woff2 in Resources */,
-				B7641A122E6050A900106F9D /* index.js in Resources */,
 				B7641A132E6050A900106F9D /* index.css in Resources */,
+				B73442F42E6C2E5F00CEFBEE /* vendor.js in Resources */,
 				B7641A142E6050A900106F9D /* Framework7Icons-Regular.woff in Resources */,
-				B7641A152E6050A900106F9D /* vendor.js in Resources */,
 				34B77791241B82EB00787FE3 /* LaunchScreen.storyboard in Resources */,
 				349088FA241B8A3D004AD9A0 /* embed.html in Resources */,
 				18D1BE4024558950001B95F7 /* fonts in Resources */,
