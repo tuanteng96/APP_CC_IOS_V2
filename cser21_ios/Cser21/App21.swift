@@ -799,68 +799,133 @@ class App21 : NSObject, CLLocationManagerDelegate
        
     }
     
-    //MARK: - GET_INFO
     @objc func GET_INFO(result: Result) -> Void {
         result.success = true
-        
+
         let keychain = KeychainSwift()
-        let key = "vn.ezsspa.deviceid" // Key riêng cho app
         let cloudStore = NSUbiquitousKeyValueStore.default
-        
-        func buildInfo(deviceId: String) {
-            var info = "IOS"
-            info += ",deviceId:" + deviceId
-            info += ",systemName:" + UIDevice.current.systemName
-            info += ",systemVersion:" + UIDevice.current.systemVersion
-            info += ",localizedModel:" + UIDevice.current.localizedModel
-            info += ",model:" + UIDevice.current.model
-            info += ",name:" + UIDevice.current.name
-            
-            result.data = JSON(info)
-            App21Result(result: result)
-        }
-        
-        // 1. Kiểm tra Keychain trước
-        if let deviceId = keychain.get(key) {
-            print("DeviceId từ Keychain: \(deviceId)")
-            buildInfo(deviceId: deviceId)
-            return
-        }
-        
-        // 2. Kiểm tra iCloud với retry loop an toàn
-        cloudStore.synchronize()
-        let maxRetry = 2
-        let retryDelay: TimeInterval = 1.0
-        var retryCount = 0
-        
-        func attemptICloud() {
-            cloudStore.synchronize()
-            if let deviceId = cloudStore.string(forKey: key) {
-                keychain.set(deviceId, forKey: key)
-                print("DeviceId từ iCloud: \(deviceId), lưu Keychain")
-                DispatchQueue.main.async {
-                    buildInfo(deviceId: deviceId)
-                }
-            } else if retryCount < maxRetry {
-                retryCount += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
-                    attemptICloud()
-                }
-            } else {
-                // 3. Tạo mới nếu cả Keychain + iCloud đều trống
-                let newDeviceId = UUID().uuidString
-                keychain.set(newDeviceId, forKey: key)
-                cloudStore.set(newDeviceId, forKey: key)
+        let defaults = UserDefaults.standard
+        let key = "vn.ezsspa.deviceid"
+
+        // --- B1. Lấy từ Keychain ---
+        var deviceId = keychain.get(key)
+        if let existing = deviceId, !existing.isEmpty {
+            print("✅ Keychain: \(existing)")
+        } else {
+            // --- B2. Lấy từ identifierForVendor ---
+            if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
+                print("⚠️ Dùng identifierForVendor")
+                deviceId = vendorId
+                keychain.set(vendorId, forKey: key)
+            }
+
+            // --- B3. Thử từ iCloud (đợi đồng bộ) ---
+            if deviceId == nil, FileManager.default.ubiquityIdentityToken != nil {
                 cloudStore.synchronize()
-                print("Tạo mới deviceId và lưu Keychain + iCloud: \(newDeviceId)")
-                DispatchQueue.main.async {
-                    buildInfo(deviceId: newDeviceId)
+                let cloudId = cloudStore.string(forKey: key)
+                if let cid = cloudId, !cid.isEmpty {
+                    print("🔄 Khôi phục từ iCloud: \(cid)")
+                    deviceId = cid
+                    keychain.set(cid, forKey: key)
+                }
+            }
+
+            // --- B4. Thử từ UserDefaults ---
+            if deviceId == nil, let backupId = defaults.string(forKey: key) {
+                print("📦 Khôi phục từ UserDefaults: \(backupId)")
+                deviceId = backupId
+                keychain.set(backupId, forKey: key)
+            }
+
+            // --- B5. Tạo mới nếu vẫn trống ---
+            if deviceId == nil {
+                let newId = UUID().uuidString
+                print("🆕 Tạo deviceId mới: \(newId)")
+                deviceId = newId
+                keychain.set(newId, forKey: key)
+                defaults.set(newId, forKey: key)
+                if FileManager.default.ubiquityIdentityToken != nil {
+                    cloudStore.set(newId, forKey: key)
+                    cloudStore.synchronize()
                 }
             }
         }
-        
-        attemptICloud()
+
+        // --- Build thông tin trả về ---
+        var info = "IOS"
+        info += ",deviceId:" + (deviceId ?? "unknown")
+        info += ",systemName:" + UIDevice.current.systemName
+        info += ",systemVersion:" + UIDevice.current.systemVersion
+        info += ",localizedModel:" + UIDevice.current.localizedModel
+        info += ",model:" + UIDevice.current.model
+        info += ",name:" + UIDevice.current.name
+        result.data = JSON(info)
+
+        App21Result(result: result)
     }
+    
+    //MARK: - GET_INFO
+//    @objc func GET_INFO(result: Result) -> Void {
+//        result.success = true
+//        
+//        let keychain = KeychainSwift()
+//        let key = "vn.ezsspa.deviceid" // Key riêng cho app
+//        let cloudStore = NSUbiquitousKeyValueStore.default
+//        
+//        func buildInfo(deviceId: String) {
+//            var info = "IOS"
+//            info += ",deviceId:" + deviceId
+//            info += ",systemName:" + UIDevice.current.systemName
+//            info += ",systemVersion:" + UIDevice.current.systemVersion
+//            info += ",localizedModel:" + UIDevice.current.localizedModel
+//            info += ",model:" + UIDevice.current.model
+//            info += ",name:" + UIDevice.current.name
+//            
+//            result.data = JSON(info)
+//            App21Result(result: result)
+//        }
+//        
+//        // 1. Kiểm tra Keychain trước
+//        if let deviceId = keychain.get(key) {
+//            print("DeviceId từ Keychain: \(deviceId)")
+//            buildInfo(deviceId: deviceId)
+//            return
+//        }
+//        
+//        // 2. Kiểm tra iCloud với retry loop an toàn
+//        cloudStore.synchronize()
+//        let maxRetry = 2
+//        let retryDelay: TimeInterval = 1.0
+//        var retryCount = 0
+//        
+//        func attemptICloud() {
+//            cloudStore.synchronize()
+//            if let deviceId = cloudStore.string(forKey: key) {
+//                keychain.set(deviceId, forKey: key)
+//                print("DeviceId từ iCloud: \(deviceId), lưu Keychain")
+//                DispatchQueue.main.async {
+//                    buildInfo(deviceId: deviceId)
+//                }
+//            } else if retryCount < maxRetry {
+//                retryCount += 1
+//                DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
+//                    attemptICloud()
+//                }
+//            } else {
+//                // 3. Tạo mới nếu cả Keychain + iCloud đều trống
+//                let newDeviceId = UUID().uuidString
+//                keychain.set(newDeviceId, forKey: key)
+//                cloudStore.set(newDeviceId, forKey: key)
+//                cloudStore.synchronize()
+//                print("Tạo mới deviceId và lưu Keychain + iCloud: \(newDeviceId)")
+//                DispatchQueue.main.async {
+//                    buildInfo(deviceId: newDeviceId)
+//                }
+//            }
+//        }
+//        
+//        attemptICloud()
+//    }
     
     static func OS_INFO() -> String {
         var   info = "IOS";
