@@ -57,62 +57,73 @@ class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognize
     //end 21/10/2024
     
     //MARK: - Location
+    // MARK: - Location
     let locationManager = CLLocationManager()
-    var locationCallback : ((CLLocationCoordinate2D?,  CLAuthorizationStatus?) -> Void)?
+    var locationCallback: ((CLLocationCoordinate2D?, CLAuthorizationStatus?) -> Void)?
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let locValue: CLLocationCoordinate2D = manager.location?.coordinate else {
-            locationCallback?(nil,nil)
+        guard let locValue = locations.last?.coordinate else {
+            locationCallback?(nil, nil)
             return
-
         }
-        print("locations = \(locValue.latitude) \(locValue.longitude)")
-
-        locationCallback?(locValue,nil)
+        print("Location: \(locValue.latitude), \(locValue.longitude)")
+        locationCallback?(locValue, CLLocationManager.authorizationStatus())
         locationManager.stopUpdatingLocation()
     }
-    
-    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        if status == .authorizedAlways {
-                        locationManager.delegate = self
-                        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-                        locationManager.startUpdatingLocation()
-            locationCallback?(manager.location?.coordinate, status)
-        } else if status == .authorizedWhenInUse {
-                        locationManager.delegate = self
-                        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-                        locationManager.startUpdatingLocation()
-            locationCallback?(manager.location?.coordinate, status)
+
+    // ✅ Hỗ trợ iOS 14 trở lên — dùng delegate mới
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if #available(iOS 14.0, *) {
+            handleAuthorizationStatus(manager.authorizationStatus)
         } else {
+            handleAuthorizationStatus(CLLocationManager.authorizationStatus())
+        }
+    }
+
+    // ✅ Hỗ trợ iOS 13 trở xuống
+    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
+        if #available(iOS 14.0, *) {
+            // Trên iOS 14+, dùng locationManagerDidChangeAuthorization
+            return
+        } else {
+            handleAuthorizationStatus(status)
+        }
+    }
+
+    // ✅ Gom logic xử lý vào 1 chỗ
+    private func handleAuthorizationStatus(_ status: CLAuthorizationStatus) {
+        switch status {
+        case .authorizedAlways, .authorizedWhenInUse:
+            locationManager.delegate = self
+            locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+            locationManager.startUpdatingLocation()
+            locationCallback?(locationManager.location?.coordinate, status)
+        case .notDetermined:
+            locationManager.delegate = self
+            locationManager.requestWhenInUseAuthorization()
+        case .restricted, .denied:
+            print("Location access denied or restricted.")
+            locationCallback?(nil, status)
+        @unknown default:
+            print("Unknown location authorization status")
             locationCallback?(nil, status)
         }
     }
 
-    func checkUsersLocationServicesAuthorization(){
-            if CLLocationManager.locationServicesEnabled() {
-                switch CLLocationManager.authorizationStatus() {
-                case .notDetermined:
-                    // Request when-in-use authorization initially
-                    // This is the first and the ONLY time you will be able to ask the user for permission
-                    self.locationManager.delegate = self
-                    locationManager.requestWhenInUseAuthorization()
-                    break
-                    
-
-                case .restricted, .denied:
-                    locationCallback?(nil,CLLocationManager.authorizationStatus())
-                    print("not access")
-                    break
-
-                case .authorizedWhenInUse, .authorizedAlways:
-                    locationManager.delegate = self
-                    locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-                    locationManager.startUpdatingLocation()
-                    break
-                }
+    func checkUsersLocationServicesAuthorization() {
+        if CLLocationManager.locationServicesEnabled() {
+            if #available(iOS 14.0, *) {
+                handleAuthorizationStatus(locationManager.authorizationStatus)
+            } else {
+                handleAuthorizationStatus(CLLocationManager.authorizationStatus())
             }
+        } else {
+            print("Location services are disabled.")
+            locationCallback?(nil, nil)
         }
+    }
 
-    func requestLoction() -> Void {
+    func requestLoction() {
         checkUsersLocationServicesAuthorization()
     }
     
@@ -532,16 +543,16 @@ class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognize
             
             //DEV OPEN
             
-    //        wv.isUserInteractionEnabled = true;
-    //        wv.scrollView.isScrollEnabled = false;
-    //        wv.scrollView.bounces = false;
-    //        wv.scrollView.showsHorizontalScrollIndicator = false;
-    //        wv.scrollView.showsVerticalScrollIndicator = false;
-    //
-    //        let link = URL(string:"http://192.168.2.103:5001/")!
-    //        let request = URLRequest(url: link)
-    //        wv.load(request);
-    //        view.addSubview(wv);
+//            wv.isUserInteractionEnabled = true;
+//            wv.scrollView.isScrollEnabled = false;
+//            wv.scrollView.bounces = false;
+//            wv.scrollView.showsHorizontalScrollIndicator = false;
+//            wv.scrollView.showsVerticalScrollIndicator = false;
+//    
+//            let link = URL(string: "http://192.168.2.103:5001/")!
+//            let request = URLRequest(url: link)
+//            wv.load(request);
+//            view.addSubview(wv);
             
             // DEV OPEN
             

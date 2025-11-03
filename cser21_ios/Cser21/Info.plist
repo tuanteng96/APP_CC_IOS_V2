@@ -49,6 +49,8 @@
 	<string>$(PRODUCT_NAME) would like to use location to allow login when you login at spa</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>$(PRODUCT_NAME) would like to use location to allow login when you login at spa</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>$(PRODUCT_NAME) needs location access to retrieve current Wi-Fi information accurately.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>$(PRODUCT_NAME) microphone use</string>
 	<key>NSPhotoLibraryUsageDescription</key>

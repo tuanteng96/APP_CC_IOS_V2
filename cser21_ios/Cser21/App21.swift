@@ -315,6 +315,7 @@ class App21 : NSObject, CLLocationManagerDelegate
         caller.requestLoction()
     }
     
+    
     //MARK: - DOWNLOAD
     @objc func DOWNLOAD(result: Result) -> Void
     {
@@ -388,36 +389,29 @@ class App21 : NSObject, CLLocationManagerDelegate
        
     }
     
-    @objc func GET_NETWORK_TYPE (result: Result) -> Void
-    {
-        caller.locationCallback = {(loc: CLLocationCoordinate2D?, status: CLAuthorizationStatus? ) in
-            if(loc != nil)
-            {
-                var wifiInfo = WiFiManager.getWiFiInfo()
-                result.data = JSON(wifiInfo)
-               
-                if  wifiInfo.isEmpty {
-                    result.data = "NO WIFI"
+    @objc func GET_NETWORK_TYPE(result: Result) -> Void {
+        caller.locationCallback = { (loc: CLLocationCoordinate2D?, status: CLAuthorizationStatus?) in
+                if let _ = loc {
+                    // ✅ Gọi async để lấy WiFi info
+                    WiFiManager.getWiFiInfo { wifiInfo in
+                        if wifiInfo.isEmpty {
+                            result.success = true
+                            result.data = "NO WIFI"
+                        } else {
+                            result.success = true
+                            result.data = JSON(wifiInfo)
+                            print("📲 [GET_NETWORK_TYPE] WiFi Info: \(wifiInfo)")
+                        }
+                        self.App21Result(result: result)
+                    }
+                } else if status == .restricted || status == .denied {
                     result.success = true
-                } else {
-                    result.success = true
-                    result.data = JSON(wifiInfo)
-                    print("RESULT WIFI: \(String(describing: result.data))")
-                }
-                self.App21Result(result: result);
-            
-            } else {
-                if(status == .restricted || status == .denied){
-                    result.success = true
-                    result.data = "It looks like you've declined location permission. Please grant permission in App Settings to use this feature."
-                    self.App21Result(result: result);
+                    result.data = "Bạn đã từ chối quyền vị trí. Vui lòng bật trong Cài đặt để sử dụng tính năng này."
+                    self.App21Result(result: result)
                 }
             }
-           
-        }
-        caller.requestLoction()
+            caller.requestLoction()
     }
-    
     
 
     //MARK: - GET_DOWNLOADED
@@ -537,28 +531,41 @@ class App21 : NSObject, CLLocationManagerDelegate
     }
     
     //MARK: - GET_LOCATION
-        @objc func GET_LOCATION(result: Result) -> Void
-        {
-            caller.locationCallback = {(loc: CLLocationCoordinate2D?, status: CLAuthorizationStatus? ) in
-                if(loc != nil)
-                {
-                    let d: [String: Double] = [
-                        "latitude": loc!.latitude,
-                        "longitude": loc!.longitude
-                    ]
-                    
-                    result.data = JSON(d)
-                    result.success = true
-                } else {
-                    print("Vui lòng bật định vị sss")
+    @objc func GET_LOCATION(result: Result) -> Void {
+        caller.locationCallback = { [weak self] (loc: CLLocationCoordinate2D?, status: CLAuthorizationStatus?) in
+            guard let self = self else { return }
+
+            if let location = loc {
+                // ✅ Có tọa độ
+                let data: [String: Double] = [
+                    "latitude": location.latitude,
+                    "longitude": location.longitude
+                ]
+
+                result.success = true
+                result.data = JSON(data)
+                print("📍 Vị trí hiện tại: lat=\(location.latitude), lng=\(location.longitude)")
+            } else {
+                // ❌ Không có tọa độ hoặc bị từ chối quyền
+                if status == .denied || status == .restricted {
                     result.success = false
+                    result.error = "Vui lòng cấp quyền định vị trong Cài đặt để tiếp tục."
                     result.data = ""
-                    result.error = "Vui lòng bật định vị"
+                    print("⚠️ Người dùng đã từ chối quyền định vị.")
+                } else {
+                    result.success = false
+                    result.error = "Không thể lấy vị trí. Vui lòng thử lại."
+                    result.data = ""
+                    print("⚠️ Không thể lấy tọa độ (chưa xác định).")
                 }
-                self.App21Result(result: result);
             }
-            caller.requestLoction()
+
+            self.App21Result(result: result)
         }
+
+        // 🚀 Bắt đầu yêu cầu Location
+        caller.requestLoction()
+    }
 
     //MARK: - OPEN_QRCODE
     @objc func OPEN_QRCODE(result: Result) -> Void
