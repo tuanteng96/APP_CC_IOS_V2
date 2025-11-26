@@ -14,6 +14,8 @@ import AudioToolbox
 import KeychainSwift
 import FirebaseMessaging
 
+
+
 class App21 : NSObject, CLLocationManagerDelegate
 {
     var caller:  ViewController
@@ -806,133 +808,144 @@ class App21 : NSObject, CLLocationManagerDelegate
        
     }
     
-    @objc func GET_INFO(result: Result) -> Void {
-        result.success = true
-
-        let keychain = KeychainSwift()
+    @objc func CHECK_ICLOUD_STATUS(result: Result) -> Void {
+        let fileManager = FileManager.default
         let cloudStore = NSUbiquitousKeyValueStore.default
-        let defaults = UserDefaults.standard
-        let key = "vn.ezsspa.deviceid"
 
-        // --- B1. Lấy từ Keychain ---
-        var deviceId = keychain.get(key)
-        if let existing = deviceId, !existing.isEmpty {
-            print("✅ Keychain: \(existing)")
-        } else {
-            // --- B2. Lấy từ identifierForVendor ---
-            if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
-                print("⚠️ Dùng identifierForVendor")
-                deviceId = vendorId
-                keychain.set(vendorId, forKey: key)
-            }
-
-            // --- B3. Thử từ iCloud (đợi đồng bộ) ---
-            if deviceId == nil, FileManager.default.ubiquityIdentityToken != nil {
-                cloudStore.synchronize()
-                let cloudId = cloudStore.string(forKey: key)
-                if let cid = cloudId, !cid.isEmpty {
-                    print("🔄 Khôi phục từ iCloud: \(cid)")
-                    deviceId = cid
-                    keychain.set(cid, forKey: key)
-                }
-            }
-
-            // --- B4. Thử từ UserDefaults ---
-            if deviceId == nil, let backupId = defaults.string(forKey: key) {
-                print("📦 Khôi phục từ UserDefaults: \(backupId)")
-                deviceId = backupId
-                keychain.set(backupId, forKey: key)
-            }
-
-            // --- B5. Tạo mới nếu vẫn trống ---
-            if deviceId == nil {
-                let newId = UUID().uuidString
-                print("🆕 Tạo deviceId mới: \(newId)")
-                deviceId = newId
-                keychain.set(newId, forKey: key)
-                defaults.set(newId, forKey: key)
-                if FileManager.default.ubiquityIdentityToken != nil {
-                    cloudStore.set(newId, forKey: key)
-                    cloudStore.synchronize()
-                }
-            }
+        // --- 1️⃣ Kiểm tra có đăng nhập iCloud không ---
+        guard fileManager.ubiquityIdentityToken != nil else {
+            result.success = false
+            result.data = "❌ iCloud Drive chưa bật hoặc chưa cấp quyền cho ứng dụng này. Vào Settings → [Tên bạn] → iCloud → iCloud Drive và bật quyền cho app."
+            self.App21Result(result: result)
+            return
         }
 
-        // --- Build thông tin trả về ---
-        var info = "IOS"
-        info += ",deviceId:" + (deviceId ?? "unknown")
-        info += ",systemName:" + UIDevice.current.systemName
-        info += ",systemVersion:" + UIDevice.current.systemVersion
-        info += ",localizedModel:" + UIDevice.current.localizedModel
-        info += ",model:" + UIDevice.current.model
-        info += ",name:" + UIDevice.current.name
-        result.data = JSON(info)
+        // --- 2️⃣ Kiểm tra quyền iCloud Drive / đồng bộ app ---
+        // Dù không dùng file container, ta vẫn có thể test qua synchronize()
+        let syncOK = cloudStore.synchronize()
+        if !syncOK {
+            result.success = false
+            result.data = "⚠️ iCloud Drive chưa bật hoặc chưa cấp quyền cho ứng dụng này. Vào Settings → [Tên bạn] → iCloud → iCloud Drive và bật quyền cho app."
+            self.App21Result(result: result)
+            return
+        }
 
-        App21Result(result: result)
+        // --- 3️⃣ Kiểm tra dữ liệu iCloud khả dụng ---
+        let dict = cloudStore.dictionaryRepresentation
+        print("☁️ iCloud Key-Value Store keys:", dict.keys)
+
+        result.success = true
+        result.data = "✅ iCloud và iCloud Drive hoạt động bình thường.\nĐăng nhập & quyền truy cập OK."
+        self.App21Result(result: result)
     }
     
-    //MARK: - GET_INFO
-//    @objc func GET_INFO(result: Result) -> Void {
-//        result.success = true
-//        
+    @objc func GET_INFO(result: Result) {
+        let Devices = DeviceIdManager.shared.getStableDeviceId()
+        
+        print("DeviceId: \(Devices.deviceId)")
+        print("Source: \(Devices.source)")
+        print("Saved in: \(Devices.savedIn.joined(separator: ", "))")
+        print("Detail log:\n\(Devices.detailLog.joined(separator: "\n"))")
+
+        var info = "IOS,deviceId:\(Devices.deviceId)"
+        info += ",systemName:\(UIDevice.current.systemName)"
+        info += ",systemVersion:\(UIDevice.current.systemVersion)"
+        info += ",localizedModel:\(UIDevice.current.localizedModel)"
+        info += ",model:\(UIDevice.current.model)"
+        info += ",name:\(UIDevice.current.name)"
+        info += ",savedIn:\(Devices.savedIn.joined(separator: " | "))"
+        info += ",detailLog:\(Devices.detailLog.joined(separator: " | "))"
+
+        result.data = JSON(info)
+        result.success = true
+        App21Result(result: result)
+    }
+
+    
+//    @objc func GET_INFO(result: Result) {
 //        let keychain = KeychainSwift()
-//        let key = "vn.ezsspa.deviceid" // Key riêng cho app
+//        keychain.synchronizable = true   // đồng bộ giữa các thiết bị iCloud Keychain
 //        let cloudStore = NSUbiquitousKeyValueStore.default
+//        let key = "vn.ezsspa.deviceid"
 //        
-//        func buildInfo(deviceId: String) {
-//            var info = "IOS"
-//            info += ",deviceId:" + deviceId
-//            info += ",systemName:" + UIDevice.current.systemName
-//            info += ",systemVersion:" + UIDevice.current.systemVersion
-//            info += ",localizedModel:" + UIDevice.current.localizedModel
-//            info += ",model:" + UIDevice.current.model
-//            info += ",name:" + UIDevice.current.name
+//        var deviceId: String?
+//        var savedToCloud = false
+//        
+//        func finalize() {
+//            var info = "IOS,deviceId:\(deviceId ?? "unknown")"
+//            info += ",systemName:\(UIDevice.current.systemName)"
+//            info += ",systemVersion:\(UIDevice.current.systemVersion)"
+//            info += ",localizedModel:\(UIDevice.current.localizedModel)"
+//            info += ",model:\(UIDevice.current.model)"
+//            info += ",name:\(UIDevice.current.name)"
+//            if savedToCloud { info += ",asyncCloud:1" }
 //            
 //            result.data = JSON(info)
+//            result.success = true
 //            App21Result(result: result)
 //        }
 //        
-//        // 1. Kiểm tra Keychain trước
-//        if let deviceId = keychain.get(key) {
-//            print("DeviceId từ Keychain: \(deviceId)")
-//            buildInfo(deviceId: deviceId)
+//        // --- 1️⃣ Ưu tiên Keychain ---
+//        if let kcId = keychain.get(key), !kcId.isEmpty {
+//            deviceId = kcId
+//            print("✅ Lấy deviceId từ Keychain: \(kcId)")
+//            finalize()
 //            return
 //        }
 //        
-//        // 2. Kiểm tra iCloud với retry loop an toàn
-//        cloudStore.synchronize()
-//        let maxRetry = 2
-//        let retryDelay: TimeInterval = 1.0
-//        var retryCount = 0
-//        
-//        func attemptICloud() {
+//        // --- 2️⃣ Kiểm tra iCloud KVStore nếu Keychain trống ---
+//        if FileManager.default.ubiquityIdentityToken != nil,
+//           FileManager.default.url(forUbiquityContainerIdentifier: nil) != nil { // iCloud Drive bật
 //            cloudStore.synchronize()
-//            if let deviceId = cloudStore.string(forKey: key) {
-//                keychain.set(deviceId, forKey: key)
-//                print("DeviceId từ iCloud: \(deviceId), lưu Keychain")
-//                DispatchQueue.main.async {
-//                    buildInfo(deviceId: deviceId)
+//            
+//            if let cloudId = cloudStore.string(forKey: key), !cloudId.isEmpty {
+//                deviceId = cloudId
+//                keychain.set(cloudId, forKey: key)
+//                savedToCloud = true
+//                print("☁️ Lấy deviceId từ iCloud KVStore: \(cloudId)")
+//                finalize()
+//                return
+//            }
+//            
+//            // --- Nếu iCloud chưa có → tạo mới sau khi đồng bộ tối đa 2 giây ---
+//            DispatchQueue.global().async {
+//                let startTime = Date()
+//                while Date().timeIntervalSince(startTime) < 2.0 {
+//                    cloudStore.synchronize()
+//                    if let cloudId = cloudStore.string(forKey: key), !cloudId.isEmpty {
+//                        deviceId = cloudId
+//                        keychain.set(cloudId, forKey: key)
+//                        savedToCloud = true
+//                        print("☁️ Lấy deviceId từ iCloud sau sync: \(cloudId)")
+//                        break
+//                    }
+//                    Thread.sleep(forTimeInterval: 0.2)
 //                }
-//            } else if retryCount < maxRetry {
-//                retryCount += 1
-//                DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
-//                    attemptICloud()
-//                }
-//            } else {
-//                // 3. Tạo mới nếu cả Keychain + iCloud đều trống
-//                let newDeviceId = UUID().uuidString
-//                keychain.set(newDeviceId, forKey: key)
-//                cloudStore.set(newDeviceId, forKey: key)
-//                cloudStore.synchronize()
-//                print("Tạo mới deviceId và lưu Keychain + iCloud: \(newDeviceId)")
+//                
 //                DispatchQueue.main.async {
-//                    buildInfo(deviceId: newDeviceId)
+//                    if deviceId == nil {
+//                        let newId = UUID().uuidString
+//                        deviceId = newId
+//                        keychain.set(newId, forKey: key)
+//                        cloudStore.set(newId, forKey: key)
+//                        cloudStore.synchronize()
+//                        savedToCloud = true
+//                        print("🆕 Tạo deviceId mới và đồng bộ iCloud: \(newId)")
+//                    }
+//                    finalize()
 //                }
 //            }
+//            return
 //        }
 //        
-//        attemptICloud()
+//        // --- 3️⃣ Không có Keychain và iCloud tắt → tạo mới ---
+//        let newId = UUID().uuidString
+//        deviceId = newId
+//        keychain.set(newId, forKey: key)
+//        print("🆕 Tạo deviceId mới (iCloud tắt): \(newId)")
+//        finalize()
 //    }
+
     
     static func OS_INFO() -> String {
         var   info = "IOS";
@@ -1360,5 +1373,192 @@ class NOTI_DATA_PARAMS : Codable
 {
     var reset: Bool? = false
 }
+
+
+struct DeviceIdStatus {
+    let deviceId: String
+    let source: String
+    let savedIn: [String]
+    let detailLog: [String]
+}
+
+class DeviceIdManager {
+
+    static let shared = DeviceIdManager()
+    private init() {}
+
+    private let keychainKey = "vn.ezsspa"
+    private let iCloudKey = "deviceId"
+    private let documentFileName = "deviceid.txt"
+    private let appGroupSuite = "group.vn.ids.shared"
+    
+    private let queue = DispatchQueue(label: "com.deviceid.manager.serial")
+
+    // MARK: Main function
+    func getStableDeviceId() -> DeviceIdStatus {
+        return queue.sync {
+            var logs: [String] = []
+            logs.append("🔍 Start getStableDeviceId()")
+
+            // 1️⃣ Load from all storages
+            var savedIn: [String] = []
+            let keychainId = normalize(getFromKeychain())
+            let iCloudId = normalize(getFromICloud())
+            let documentId = normalize(getFromDocuments())
+            let sharedId = normalize(getFromShared())
+
+            if keychainId != nil { savedIn.append("Keychain") }
+            if iCloudId != nil { savedIn.append("iCloud") }
+            if documentId != nil { savedIn.append("Documents") }
+            if sharedId != nil { savedIn.append("Shared") }
+
+            logs.append("➡️ Keychain: \(keychainId ?? "nil")")
+            logs.append("➡️ iCloud: \(iCloudId ?? "nil")")
+            logs.append("➡️ Documents: \(documentId ?? "nil")")
+            logs.append("➡️ Shared: \(sharedId ?? "nil")")
+
+            // 2️⃣ Conflict check
+            let ids = [keychainId, iCloudId, documentId, sharedId].compactMap { $0 }
+            let uniqueIds = Array(Set(ids))
+            if uniqueIds.count > 1 {
+                logs.append("⚠️ Conflict detected! Different IDs found: \(uniqueIds)")
+            }
+
+            // 3️⃣ Select priority source: Keychain > iCloud > Documents > Shared
+            let sourceId = keychainId ?? iCloudId ?? documentId ?? sharedId
+            var deviceId: String
+            var source: String
+            if let id = sourceId {
+                deviceId = id
+                if keychainId != nil { source = "Keychain" }
+                else if iCloudId != nil { source = "iCloud" }
+                else if documentId != nil { source = "Documents" }
+                else { source = "Shared" }
+                logs.append("✅ Using existing UUID from \(source)")
+            } else {
+                deviceId = UUID().uuidString
+                source = "new"
+                logs.append("🆕 Generated new UUID")
+            }
+
+            // 4️⃣ Migrate to missing storage
+            if keychainId != deviceId { saveToKeychain(deviceId, logs: &logs) }
+            if iCloudId != deviceId { saveToICloud(deviceId, logs: &logs) }
+            if documentId != deviceId { saveToDocuments(deviceId, logs: &logs) }
+            if sharedId != deviceId { saveToShared(deviceId, logs: &logs) }
+
+            // 5️⃣ Update savedIn after migration
+            var currentSaved: [String] = []
+            if getFromKeychain() != nil { currentSaved.append("Keychain") }
+            if getFromICloud() != nil { currentSaved.append("iCloud") }
+            if getFromDocuments() != nil { currentSaved.append("Documents") }
+            if getFromShared() != nil { currentSaved.append("Shared") }
+
+            logs.append("🏁 End getStableDeviceId()")
+            
+            return DeviceIdStatus(
+                deviceId: deviceId,
+                source: source,
+                savedIn: currentSaved,
+                detailLog: logs
+            )
+        }
+    }
+
+    // MARK: Normalize UUID
+    private func normalize(_ str: String?) -> String? {
+        guard let s = str?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        return UUID(uuidString: s)?.uuidString
+    }
+}
+
+// MARK: - iCloud
+extension DeviceIdManager {
+    private func saveToICloud(_ id: String, logs: inout [String]) {
+        let store = NSUbiquitousKeyValueStore.default
+        store.set(id, forKey: iCloudKey)
+        if store.synchronize() {
+            logs.append("☁️ Saved to iCloud")
+        } else {
+            logs.append("❌ Failed saving to iCloud")
+        }
+    }
+    private func getFromICloud() -> String? {
+        let store = NSUbiquitousKeyValueStore.default
+        store.synchronize()
+        return store.string(forKey: iCloudKey)
+    }
+}
+
+// MARK: - Keychain
+extension DeviceIdManager {
+    private func getFromKeychain() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: keychainKey,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data,
+           let id = String(data: data, encoding: .utf8) { return id }
+        return nil
+    }
+    private func saveToKeychain(_ id: String, logs: inout [String]) {
+        let data = id.data(using: .utf8)!
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: keychainKey
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: keychainKey,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        if status == errSecSuccess { logs.append("🔐 Saved to Keychain") }
+        else { logs.append("❌ Failed saving to Keychain: \(status)") }
+    }
+}
+
+// MARK: - Documents
+extension DeviceIdManager {
+    private var documentsURL: URL? {
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(documentFileName)
+    }
+    private func getFromDocuments() -> String? {
+        guard let url = documentsURL, FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+    private func saveToDocuments(_ id: String, logs: inout [String]) {
+        guard let url = documentsURL else { return }
+        do {
+            try id.write(to: url, atomically: true, encoding: .utf8)
+            logs.append("💾 Saved to Documents")
+        } catch {
+            logs.append("❌ Failed saving to Documents: \(error)")
+        }
+    }
+}
+
+// MARK: - Shared UserDefaults (App Group)
+extension DeviceIdManager {
+    private func getFromShared() -> String? {
+        guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return nil }
+        return defaults.string(forKey: keychainKey)
+    }
+    private func saveToShared(_ id: String, logs: inout [String]) {
+        guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return }
+        defaults.set(id, forKey: keychainKey)
+        defaults.synchronize()
+        logs.append("🗂 Saved to Shared UserDefaults")
+    }
+}
+
+
+
 
 
