@@ -14,7 +14,7 @@ import CoreLocation
 import AVFoundation
 import SystemConfiguration.CaptiveNetwork
 import PhotosUI
-
+import UniformTypeIdentifiers
 
 class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognizerDelegate,CLLocationManagerDelegate ,AVAudioRecorderDelegate, WKNavigationDelegate, POSWIFIManagerDelegate,
     PHPickerViewControllerDelegate, UIImagePickerControllerDelegate ,
@@ -543,44 +543,44 @@ class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognize
             
             //DEV OPEN
             
-//            wv.isUserInteractionEnabled = true;
-//            wv.scrollView.isScrollEnabled = false;
-//            wv.scrollView.bounces = false;
-//            wv.scrollView.showsHorizontalScrollIndicator = false;
-//            wv.scrollView.showsVerticalScrollIndicator = false;
-//    
-//            let link = URL(string: "http://192.168.100.147:5001/")!
-//            let request = URLRequest(url: link)
-//            wv.load(request);
-//            view.addSubview(wv);
+            wv.isUserInteractionEnabled = true;
+            wv.scrollView.isScrollEnabled = false;
+            wv.scrollView.bounces = false;
+            wv.scrollView.showsHorizontalScrollIndicator = false;
+            wv.scrollView.showsVerticalScrollIndicator = false;
+    
+            let link = URL(string: "http://192.168.100.147:5001/")!
+            let request = URLRequest(url: link)
+            wv.load(request);
+            view.addSubview(wv);
             
             // DEV OPEN
             
             // load embed.html
             // DEV HIDDEN
-            if let path = Bundle.main.path(forResource: HTML_EMBED, ofType: "html"){
-                let fm = FileManager()
-                let exists = fm.fileExists(atPath: path)
-                if(exists){
-                    let c = fm.contents(atPath: path)
-                    let cString = NSString(data: c!, encoding: String.Encoding.utf8.rawValue)
-
-                    let url = URL(string: domain)
-
-                    var html:String = "";
-                    html +=  cString! as String
-
-
-                    if HTML_EMBED == "embed"{
-                        wv.isHidden = false;
-                        wv.loadHTMLString(html, baseURL: url);
-                    }else{
-                        wv.isHidden = false;
-                        wv.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
-                    }
-                    wv.alpha = 1
-                }
-            }
+//            if let path = Bundle.main.path(forResource: HTML_EMBED, ofType: "html"){
+//                let fm = FileManager()
+//                let exists = fm.fileExists(atPath: path)
+//                if(exists){
+//                    let c = fm.contents(atPath: path)
+//                    let cString = NSString(data: c!, encoding: String.Encoding.utf8.rawValue)
+//
+//                    let url = URL(string: domain)
+//
+//                    var html:String = "";
+//                    html +=  cString! as String
+//
+//
+//                    if HTML_EMBED == "embed"{
+//                        wv.isHidden = false;
+//                        wv.loadHTMLString(html, baseURL: url);
+//                    }else{
+//                        wv.isHidden = false;
+//                        wv.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
+//                    }
+//                    wv.alpha = 1
+//                }
+//            }
             // DEV HIDDEN
                     
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(notification:)), name: UIResponder.keyboardWillHideNotification , object:nil)
@@ -719,120 +719,286 @@ class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognize
         }
     }
     
-    func presentMultiImagePicker(isMulti : Bool ,completion: @escaping ([URL]) -> Void) {
+    func presentMultiImagePicker(isMulti: Bool, accept: String? = nil, completion: @escaping ([URL]) -> Void) {
+        self.completionPickImageHandler = completion
+
         if #available(iOS 14.0, *), isMulti {
             var configuration = PHPickerConfiguration()
-            configuration.selectionLimit =  0
-            configuration.filter = .images
-            
+            configuration.selectionLimit = 0
+
+            // ✅ filter theo accept
+            configuration.filter = self.phpickerFilter(from: accept)
+
             if #available(iOS 15.0, *) {
-                configuration.selection = .ordered   // ✅ đảm bảo thứ tự theo user chọn
+                configuration.selection = .ordered
             }
-            
+
             let picker = PHPickerViewController(configuration: configuration)
             picker.delegate = self
-            self.completionPickImageHandler = completion
             present(picker, animated: true, completion: nil)
         } else {
             let imagePicker = UIImagePickerController()
             imagePicker.sourceType = .photoLibrary
             imagePicker.allowsEditing = false
             imagePicker.delegate = self
-            self.completionPickImageHandler = completion
             present(imagePicker, animated: true, completion: nil)
         }
-              
     }
+    
+    @available(iOS 14.0, *)
+    private func phpickerFilter(from accept: String?) -> PHPickerFilter? {
+        guard let accept = accept?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines),
+              !accept.isEmpty else {
+            return .images // default
+        }
+
+        // tách theo dấu phẩy
+        let parts = accept.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+
+        var wantsImage = false
+        var wantsVideo = false
+
+        for p in parts {
+            if p == "image/*" || p.hasPrefix("image/") { wantsImage = true }
+            if p == "video/*" || p.hasPrefix("video/") { wantsVideo = true }
+        }
+
+        if wantsImage && wantsVideo { return .any(of: [.images, .videos]) }
+        if wantsVideo { return .videos }
+        return .images
+    }
+
+
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true)
+
+            print("❌ UIImagePicker cancelled")
+
+            self.completionPickImageHandler?([])
+            self.completionPickImageHandler = nil
+
+            let result = Result()
+            result.success = true
+            result.data = ""
+            self.app21?.App21Result(result: result)
+
+    }
+    
+    func logSize(label: String, bytes: Int) {
+        let kb = Double(bytes) / 1024
+        let mb = kb / 1024
+        if mb >= 1 {
+            print("📦 \(label): \(String(format: "%.2f", mb)) MB")
+        } else {
+            print("📦 \(label): \(String(format: "%.2f", kb)) KB")
+        }
+    }
+    
+    
     
     private var completionPickImageHandler: (([URL]) -> Void)?
     
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            picker.dismiss(animated: true, completion: nil)
-
-            if let selectedImage = info[.imageURL] as? URL {
-               print(selectedImage)
-                self.completionPickImageHandler?([selectedImage])
-            }
-        }
-    
-    @available(iOS 14.0, *)
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+    func imagePickerController(_ picker: UIImagePickerController,
+                               didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         picker.dismiss(animated: true, completion: nil)
 
-        let dispatchGroup = DispatchGroup()
+        if let url = info[.imageURL] as? URL {
+            self.completionPickImageHandler?([url])
+        } else {
+            self.completionPickImageHandler?([])
+        }
+        self.completionPickImageHandler = nil
+    }
 
-        // Lưu theo index để giữ đúng thứ tự chọn
+    @available(iOS 14.0, *)
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+
+            // ❌ User bấm Cancel
+            if results.isEmpty {
+                print("❌ Image picker cancelled")
+
+                self.completionPickImageHandler?([])
+                self.completionPickImageHandler = nil
+
+                // Nếu bạn muốn trả về App21Result
+                let result = Result()
+                result.success = true
+                result.data = ""
+                self.app21?.App21Result(result: result)
+                return
+        }
+
+        // User cancel
+        if results.isEmpty {
+            self.completionPickImageHandler?([])
+            self.completionPickImageHandler = nil
+            return
+        }
+
+        let group = DispatchGroup()
         var indexedUrls: [(Int, URL)] = []
         indexedUrls.reserveCapacity(results.count)
 
-        for (idx, result) in results.enumerated() {
-            if result.itemProvider.canLoadObject(ofClass: UIImage.self) {
-                dispatchGroup.enter()
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let folder = docs.appendingPathComponent("ImagePicker", isDirectory: true)
 
-                result.itemProvider.loadObject(ofClass: UIImage.self) { (object, error) in
-                    defer { dispatchGroup.leave() }
+        // tạo folder 1 lần
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        for (idx, r) in results.enumerated() {
+            let provider = r.itemProvider
+
+            // Ưu tiên lấy file representation (giữ đúng định dạng gốc)
+            if provider.hasItemConformingToTypeIdentifier("public.image") {
+                group.enter()
+                provider.loadFileRepresentation(forTypeIdentifier: "public.image") { url, error in
+                    defer { group.leave() }
 
                     if let error = error {
-                        print("Error loading image: \(error.localizedDescription)")
+                        print("❌ loadFileRepresentation error:", error.localizedDescription)
                         return
                     }
+                    guard let srcURL = url else { return }
 
-                    guard let image = object as? UIImage else {
-                        print("Loaded object is not UIImage")
-                        return
-                    }
-
-                    // Sửa orientation
-                    let fixedImage = image.fixedOrientation()
-
-                    guard let imageData = fixedImage.jpegData(compressionQuality: 1.0) else {
-                        print("Cannot convert image to JPEG data")
-                        return
-                    }
-
-                    let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                    let fileName = UUID().uuidString + ".jpg"
-                    let destinationURL = documentsDirectory.appendingPathComponent(fileName)
+                    // copy sang Documents (vì URL này là temp)
+                    let ext = srcURL.pathExtension.isEmpty ? "jpg" : srcURL.pathExtension
+                    let fileURL = folder.appendingPathComponent("\(UUID().uuidString).\(ext)")
 
                     do {
-                        try imageData.write(to: destinationURL, options: .atomic)
-
-                        // ✅ append kèm index
-                        indexedUrls.append((idx, destinationURL))
-                        print("Saved image to: \(destinationURL)")
+                        // nếu file đã tồn tại thì xoá
+                        if FileManager.default.fileExists(atPath: fileURL.path) {
+                            try FileManager.default.removeItem(at: fileURL)
+                        }
+                        try FileManager.default.copyItem(at: srcURL, to: fileURL)
+                        indexedUrls.append((idx, fileURL))
+                        print("✅ Saved original file:", fileURL.lastPathComponent)
                     } catch {
-                        print("Error saving image: \(error.localizedDescription)")
+                        print("❌ Copy error:", error.localizedDescription)
+                    }
+                }
+            } else {
+                // fallback: load UIImage -> save jpg (không nén, quality 1.0)
+                group.enter()
+                provider.loadObject(ofClass: UIImage.self) { obj, error in
+                    defer { group.leave() }
+                    guard let image = obj as? UIImage else { return }
+
+                    let fixed = image.fixedOrientation()
+                    guard let data = fixed.jpegData(compressionQuality: 1.0) else { return }
+
+                    let fileURL = folder.appendingPathComponent("\(UUID().uuidString).jpg")
+                    do {
+                        try data.write(to: fileURL, options: .atomic)
+                        indexedUrls.append((idx, fileURL))
+                        print("✅ Saved fallback jpg:", fileURL.lastPathComponent)
+                    } catch {
+                        print("❌ Save error:", error.localizedDescription)
                     }
                 }
             }
         }
 
-        dispatchGroup.notify(queue: .main) {
-            // ✅ sort theo idx để đúng thứ tự user chọn
+        group.notify(queue: .main) {
             let ordered = indexedUrls.sorted { $0.0 < $1.0 }.map { $0.1 }
             self.completionPickImageHandler?(ordered)
+            self.completionPickImageHandler = nil
+        }
+    }
+    
+    func presentDocumentPicker(isMultiple: Bool, accept: String = "", completion: @escaping ([URL]) -> Void) {
+        self.completionPickImageHandler = completion
+
+        if #available(iOS 14.0, *) {
+            let types = self.utTypes(from: accept)
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+            picker.allowsMultipleSelection = isMultiple
+            picker.delegate = self
+            present(picker, animated: true)
+        } else {
+            // iOS < 14: fallback broad types
+            let picker = UIDocumentPickerViewController(documentTypes: ["public.data", "public.content"], in: .import)
+            picker.allowsMultipleSelection = isMultiple
+            picker.delegate = self
+            present(picker, animated: true)
         }
     }
 
-    
-    func presentDocumentPicker(isMultiple: Bool, completion: @escaping ([URL]) -> Void) {
-        self.completionPickImageHandler = completion
-        if #available(iOS 14.0, *) {
-            let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-            documentPicker.allowsMultipleSelection = isMultiple
-            documentPicker.delegate = self
-            present(documentPicker, animated: true, completion: nil)
-        } else {
-            
-            let documentPicker = UIDocumentPickerViewController(documentTypes: ["public.data", "public.content"], in: .import)
-            documentPicker.allowsMultipleSelection = isMultiple
-            documentPicker.delegate = self
-            present(documentPicker, animated: true, completion: nil)
+    @available(iOS 14.0, *)
+    private func utTypes(from accept: String) -> [UTType] {
+        let a = accept.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if a.isEmpty || a == "*/*" { return [.item] }
+
+        // tách theo dấu phẩy: "application/pdf,image/*"
+        let parts = a.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+
+        var types: [UTType] = []
+
+        for p in parts {
+            if p == "application/pdf" { types.append(.pdf); continue }
+            if p == "image/*" { types.append(.image); continue }
+            if p == "video/*" { types.append(.movie); continue }
+
+            // mime cụ thể -> UTType(mimeType:)
+            if let t = UTType(mimeType: String(p)) {
+                types.append(t)
+                continue
+            }
+
+            // ext: ".docx" hoặc "docx"
+            let cleaned = p.replacingOccurrences(of: ".", with: "")
+            if let t = UTType(filenameExtension: cleaned) {
+                types.append(t)
+            }
         }
+
+        return types.isEmpty ? [.item] : types
     }
     
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        self.completionPickImageHandler?(urls)
+        DispatchQueue.main.async {
+            controller.dismiss(animated: true)
+
+            print("✅ didPickDocumentsAt count:", urls.count)
+            urls.forEach { print("📄 picked:", $0.absoluteString) }
+
+            // nếu file đến từ Files/iCloud -> cần quyền tạm thời
+            var safeUrls: [URL] = []
+            safeUrls.reserveCapacity(urls.count)
+
+            for u in urls {
+                if u.startAccessingSecurityScopedResource() {
+                    safeUrls.append(u)
+                    u.stopAccessingSecurityScopedResource()
+                } else {
+                    // vẫn append để bạn xử lý copy theo cách khác nếu muốn
+                    safeUrls.append(u)
+                }
+            }
+
+            self.completionPickImageHandler?(safeUrls)
+            self.completionPickImageHandler = nil
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        DispatchQueue.main.async {
+            controller.dismiss(animated: true)
+
+            print("❌ Document picker cancelled by user")
+
+            // ✅ Trả callback rỗng để JS biết là huỷ
+            self.completionPickImageHandler?([])
+            self.completionPickImageHandler = nil
+
+            // ✅ Nếu đang dùng App21Result (RẤT NÊN)
+            if let app21 = self.app21 {
+                let result = Result()
+                result.success = true
+                result.data = ""
+                app21.App21Result(result: result)
+            }
+        }
     }
     
     private func downloadImagesFromNetwork(imageUrls: [String],completion: @escaping ([UIImage]) -> Void) {
@@ -1029,6 +1195,44 @@ extension UIImage {
         UIGraphicsEndImageContext()
         return normalizedImage ?? self
     }
+    
+    func resized(maxSide: CGFloat) -> UIImage {
+            let w = size.width, h = size.height
+            let maxCurrent = max(w, h)
+            guard maxCurrent > maxSide else { return self }
+
+            let scale = maxSide / maxCurrent
+            let newSize = CGSize(width: w * scale, height: h * scale)
+
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            return renderer.image { _ in
+                self.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+        }
+    func jpegData(maxKB: Int, minQuality: CGFloat = 0.35) -> Data? {
+            let maxBytes = maxKB * 1024
+            var q: CGFloat = 0.9
+            var data = self.jpegData(compressionQuality: q)
+            guard var out = data else { return nil }
+            if out.count <= maxBytes { return out }
+
+            // binary search quality
+            var low: CGFloat = minQuality
+            var high: CGFloat = q
+            for _ in 0..<8 {
+                q = (low + high) / 2
+                data = self.jpegData(compressionQuality: q)
+                guard let d = data else { break }
+                out = d
+                if d.count > maxBytes {
+                    high = q
+                } else {
+                    low = q
+                }
+            }
+            return out
+        }
+
 }
 
 

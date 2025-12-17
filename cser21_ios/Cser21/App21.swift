@@ -35,6 +35,8 @@ class App21 : NSObject, CLLocationManagerDelegate
         }
         return nil
     }
+    
+    
 
     //MARK: - App21Result
     func App21Result(result: Result) -> Void {
@@ -103,6 +105,16 @@ class App21 : NSObject, CLLocationManagerDelegate
         }
     }
     
+    func logSize(_ label: String, _ bytes: Int) {
+        let kb = Double(bytes) / 1024
+        let mb = kb / 1024
+        if mb >= 1 {
+            NSLog("📦 \(label): \(String(format: "%.2f", mb)) MB")
+        } else {
+            NSLog("📦 \(label): \(String(format: "%.2f", kb)) KB")
+        }
+    }
+    
     //MARK: - BACKGROUND
     @objc func BACKGROUND(result: Result) -> Void {
         //
@@ -125,78 +137,213 @@ class App21 : NSObject, CLLocationManagerDelegate
     
     //MARK: - CHOOSE IMAGES
     @objc func CHOOSE_IMAGES(result: Result) -> Void {
-        print(result)
-        
-        if let jsonData = result.params?.data(using: .utf8) {
-            do {
-                if let dictionary = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
-                    if let isMultiple = dictionary["isMultiple"] as? Bool {
-                        DispatchQueue.main.async { // Correct
-                            self.caller.presentMultiImagePicker(isMulti: isMultiple) { imagePaths in
-                                print(imagePaths)
-                                var img : [String] = []
-                                for image in imagePaths {
-                                    let src = DownloadFileTask().saveURL2(url: image, suffix: "ImagePicker-\(image.lastPathComponent)");
-                                    img.append(src)
-                                }
-                                let data = JSON(img)
-                                print(data)
-                                result.success = true;
-                                result.data = data
-                                self.App21Result(result: result);
-                               
-                            }
-                        }
-                    } else {
-                        result.success = false;
-                        result.data = "Not found isMultiple"
-                        self.App21Result(result: result);
-                    }
-                   
-                }
-            } catch {
-                result.success = false;
-                result.data = "Parse JSON ERROR"
-                self.App21Result(result: result);
-            }
+        NSLog("📥 CHOOSE_IMAGES params: %@", result.params ?? "nil")
+
+        guard let params = result.params, let jsonData = params.data(using: .utf8) else {
+            result.success = false
+            result.error = "params is nil"
+            self.App21Result(result: result)
+            return
         }
-       
-       
+
+        // ===== Parse params =====
+        var isMultiple = true
+        var shouldCompress = false
+        var maxSide: CGFloat = 1280
+        var maxKB: Int = 350
+        var ext: String = "png"
+        var pref: String = "IMG"
+        var accept: String? = "image/*"
+
+        do {
+            if let dict = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
+                NSLog("📦 CHOOSE_IMAGES params dict: %@", dict)
+
+                accept = dict["accept"] as? String
+                isMultiple = (dict["isMultiple"] as? Bool) ?? true
+                shouldCompress = (dict["isCompressed"] as? Bool) ?? false
+
+                if let side = dict["maxSide"] as? Double { maxSide = CGFloat(side) }
+                else if let side = dict["maxSide"] as? Int { maxSide = CGFloat(side) }
+
+                if let kb = dict["maxKB"] as? Int { maxKB = kb }
+                else if let kb = dict["maxKB"] as? Double { maxKB = Int(kb) }
+
+                if let e = dict["ext"] as? String, !e.isEmpty { ext = e.lowercased() }
+                if let p = dict["pref"] as? String, !p.isEmpty { pref = p }
+            }
+        } catch {
+            result.success = false
+            result.error = "Parse JSON ERROR: \(error.localizedDescription)"
+            self.App21Result(result: result)
+            return
+        }
+
+        // ✅ Nếu nén: luôn dùng JPG để tránh PNG phình size
+        if shouldCompress { ext = "jpg" }
+
+        NSLog("📌 CHOOSE_IMAGES config -> accept=%@ isMultiple=%@ isCompressed=%@ maxSide=%d maxKB=%d ext=%@ pref=%@",
+              (accept ?? "nil"),
+              isMultiple.description,
+              shouldCompress.description,
+              Int(maxSide),
+              maxKB,
+              ext,
+              pref)
+
+        DispatchQueue.main.async {
+            // xin quyền photo cho chắc (nhất là iOS < 14 dùng UIImagePicker)
+            self._PERMISSION(permission: .photoLibrary, result: result, ok: { _ in
+
+                // ✅ nếu ViewController bạn chưa có accept param thì đổi lại call cũ
+                self.caller.presentMultiImagePicker(isMulti: isMultiple, accept: accept) { imagePaths in
+                    NSLog("🖼️ Picked \(imagePaths.count) images")
+
+                    var out: [String] = []
+                    out.reserveCapacity(imagePaths.count)
+
+                    let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    let folder = docs.appendingPathComponent("ImagePicker", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "ddMMyyyyHHmmss"
+
+                    for (idx, url) in imagePaths.enumerated() {
+
+                        // ===== Không nén -> copy như cũ =====
+                        if !shouldCompress {
+                            let src = DownloadFileTask().saveURL2(
+                                url: url,
+                                suffix: "ImagePicker-\(url.lastPathComponent)"
+                            )
+                            out.append(src)
+                            continue
+                        }
+
+                        // ===== Nén =====
+                        guard let image = UIImage(contentsOfFile: url.path) else {
+                            NSLog("⚠️ Cannot load UIImage from: %@", url.path)
+                            // fallback copy
+                            let src = DownloadFileTask().saveURL2(url: url, suffix: "ImagePicker-\(url.lastPathComponent)")
+                            out.append(src)
+                            continue
+                        }
+
+                        let fixed = image.fixedOrientation()
+
+                        // log size before (jpeg quality 1.0)
+                        if let before = fixed.jpegData(compressionQuality: 1.0) {
+                            self.logSize("Picker[\(idx)] original", before.count)
+                        } else {
+                            NSLog("📦 Picker[%d] original: (jpegData nil)", idx)
+                        }
+
+                        let resized = fixed.resized(maxSide: maxSide)
+
+                        if let afterResize = resized.jpegData(compressionQuality: 1.0) {
+                            self.logSize("Picker[\(idx)] after resize (maxSide=\(Int(maxSide)))", afterResize.count)
+                        }
+
+                        guard let finalData = resized.jpegData(maxKB: maxKB) else {
+                            NSLog("⚠️ Compress fail Picker[\(idx)] -> fallback copy")
+                            let src = DownloadFileTask().saveURL2(url: url, suffix: "ImagePicker-\(url.lastPathComponent)")
+                            out.append(src)
+                            continue
+                        }
+
+                        self.logSize("Picker[\(idx)] after compress (maxKB=\(maxKB))", finalData.count)
+
+                        // lưu file thật
+                        let fileName = "\(pref)-\(formatter.string(from: Date()))-\(idx).\(ext)"
+                        let fileURL = folder.appendingPathComponent(fileName)
+
+                        do {
+                            try finalData.write(to: fileURL, options: .atomic)
+
+                            if let attr = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                               let size = attr[.size] as? Int {
+                                self.logSize("Picker[\(idx)] saved real", size)
+                                NSLog("Saved path: %@", fileURL.path)
+                            }
+
+                            out.append("local://\(fileURL.path)")
+                        } catch {
+                            NSLog("⚠️ Write fail Picker[\(idx)] -> fallback copy: %@", error.localizedDescription)
+                            let src = DownloadFileTask().saveURL2(url: url, suffix: "ImagePicker-\(url.lastPathComponent)")
+                            out.append(src)
+                        }
+                    }
+
+                    result.success = true
+                    result.data = JSON(out)
+                    self.App21Result(result: result)
+                }
+            })
+        }
     }
+
     
     //MARK: - CHOOSE FILES
     @objc func CHOOSE_FILES(result: Result) -> Void {
-        if let jsonData = result.params?.data(using: .utf8) {
-            do {
-                if let dictionary = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
-                    if let isMultiple = dictionary["isMultiple"] as? Bool {
-                        DispatchQueue.main.async { // Correct
-                            self.caller.presentDocumentPicker(isMultiple: isMultiple) { filePaths in
-                                print(filePaths)
-                                var img : [String] = []
-                                for image in filePaths {
-                                    let src = DownloadFileTask().saveURL2(url: image, suffix: "FilePicker-\(image.lastPathComponent)");
-                                    img.append(src)
-                                }
-                                let data = JSON(img)
-                                print(data)
-                                result.success = true;
-                                result.data = data
-                                self.App21Result(result: result);
-                               
-                            }
-                        }
-                    } else {
-                        result.success = false;
-                        result.data = "Not found isMultiple"
-                        self.App21Result(result: result);
-                    }
-                   
+        NSLog("📥 CHOOSE_FILES params: %@", result.params ?? "nil")
+
+        guard let params = result.params, let jsonData = params.data(using: .utf8) else {
+            result.success = false
+            result.error = "params is nil"
+            self.App21Result(result: result)
+            return
+        }
+
+        var isMultiple = false
+        var accept: String = "*/*" // ví dụ: "application/pdf", "image/*", "*/*"
+
+        do {
+            if let dict = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
+                NSLog("📦 CHOOSE_FILES params dict: %@", dict)
+
+                isMultiple = (dict["isMultiple"] as? Bool) ?? false
+                if let a = dict["accept"] as? String {
+                    accept = a.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 }
-            } catch {
-                result.success = false;
-                result.data = "Parse JSON ERROR"
-                self.App21Result(result: result);
+            }
+        } catch {
+            result.success = false
+            result.error = "Parse JSON ERROR: \(error.localizedDescription)"
+            self.App21Result(result: result)
+            return
+        }
+
+        NSLog("📌 CHOOSE_FILES config -> accept=%@ isMultiple=%@",
+              accept, isMultiple.description)
+
+        DispatchQueue.main.async {
+            // xin quyền photoLibrary không cần cho document, nhưng giữ luồng giống các hàm khác nếu bạn muốn
+            self.caller.presentDocumentPicker(isMultiple: isMultiple, accept: accept) { filePaths in
+                NSLog("📄 Picked \(filePaths.count) files")
+
+                var out: [String] = []
+                out.reserveCapacity(filePaths.count)
+
+                for url in filePaths {
+                    // Copy về local (giống cách cũ), nhưng trả ra local scheme URL cho chắc upload
+                    let savedAbsPath = DownloadFileTask().saveURL2(
+                        url: url,
+                        suffix: "FilePicker-\(url.lastPathComponent)"
+                    )
+
+                    // Nếu saveURL2 đã trả sẵn local://... thì append luôn
+                    // Nếu nó trả abs path thì convert sang local scheme
+                    if savedAbsPath.hasPrefix("local://") {
+                        out.append(savedAbsPath)
+                    } else {
+                        out.append(DownloadFileTask.toLocalSchemeUrl(savedAbsPath))
+                    }
+                }
+
+                result.success = true
+                result.data = JSON(out)
+                self.App21Result(result: result)
             }
         }
     }
@@ -215,37 +362,145 @@ class App21 : NSObject, CLLocationManagerDelegate
     }
     
     
-    
-    
     //MARK: - CAMERA
     @objc func CAMERA(result: Result) -> Void {
-        //
-        DispatchQueue.main.async(execute: {
-            // self.caller.openCamera(result: result);
-            self._PERMISSION(permission: PermissionName.camera,result: result, ok:{(mess: String) -> Void in
-                //go
-                NSLog("ok->openCamera");
-                
-                AttachmentHandler.shared.showCamera(vc: self.caller);
-                
-                AttachmentHandler.shared.imagePickedBlock = { (image) in
-                    /* get your image here */
-                    //Use image name from bundle to create NSData
-                    // let image : UIImage = UIImage(named:"imageNameHere")!
-                    //Now use image to create into NSData format
-                    //let imageData:NSData = image.pngData()! as NSData
-                    
-                    //let strBase64 = imageData.base64EncodedString(options: .lineLength64Characters)
-                    result.success = true
-                    let src = DownloadFileTask().save(image: image,
-                                                      opt: self.paramsToDic(params: result.params));
-                    result.data = JSON(src);
-                    self.App21Result(result: result);
+        DispatchQueue.main.async {
+            self._PERMISSION(permission: PermissionName.camera, result: result, ok: { (_: String) -> Void in
+                NSLog("ok->openCamera")
+
+                // ===== 1) LẤY PARAMS STRING (ưu tiên result.params, fallback từ result.raw.params object) =====
+                var paramsStr: String? = result.params
+
+                if (paramsStr == nil || paramsStr == ""), let raw = result.raw,
+                   let rawData = raw.data(using: .utf8),
+                   let root = (try? JSONSerialization.jsonObject(with: rawData, options: [])) as? [String: Any],
+                   let paramsObj = root["params"] {
+
+                    if let pData = try? JSONSerialization.data(withJSONObject: paramsObj, options: []),
+                       let pStr = String(data: pData, encoding: .utf8) {
+                        paramsStr = pStr
+                    }
                 }
-                
+
+                NSLog("📥 CAMERA paramsStr: %@", paramsStr ?? "nil")
+
+                // ===== 2) PARSE CONFIG =====
+                var shouldCompress = false
+                var maxSide: CGFloat = 1600
+                var maxKB: Int = 500
+                var pref: String = "IMG"
+                var ext: String = "png" // default theo JS bạn đang set
+
+                if let p = paramsStr, let data = p.data(using: .utf8) {
+                    do {
+                        if let dict = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                            NSLog("📦 CAMERA params dict: %@", dict)
+
+                            shouldCompress = (dict["isCompressed"] as? Bool) ?? false
+
+                            if let side = dict["maxSide"] as? Double { maxSide = CGFloat(side) }
+                            else if let side = dict["maxSide"] as? Int { maxSide = CGFloat(side) }
+
+                            if let kb = dict["maxKB"] as? Int { maxKB = kb }
+                            else if let kb = dict["maxKB"] as? Double { maxKB = Int(kb) }
+
+                            if let pPref = dict["pref"] as? String, !pPref.isEmpty { pref = pPref }
+                            if let pExt = dict["ext"] as? String, !pExt.isEmpty { ext = pExt.lowercased() }
+                        }
+                    } catch {
+                        NSLog("❌ CAMERA params JSON parse error: %@", error.localizedDescription)
+                    }
+                }
+
+                // ✅ Nếu nén: ép ext về jpg để tránh PNG phình size
+                if shouldCompress { ext = "jpg" }
+
+                NSLog("📌 CAMERA config -> isCompressed=%@ maxSide=%d maxKB=%d pref=%@ ext=%@",
+                      shouldCompress.description, Int(maxSide), maxKB, pref, ext)
+
+                // ===== 3) OPEN CAMERA =====
+                AttachmentHandler.shared.showCamera(vc: self.caller)
+
+                AttachmentHandler.shared.imagePickedBlock = { image in
+                    NSLog("📸 CAMERA imagePickedBlock called")
+                    result.success = true
+
+                    // Fix orientation luôn
+                    let fixed = image.fixedOrientation()
+
+                    // Log size gốc (để khỏi “mất logSize lúc đầu”)
+                    if let original = fixed.jpegData(compressionQuality: 1.0) {
+                        self.logSize("Camera original", original.count)
+                    } else {
+                        NSLog("📦 Camera original: (jpegData nil)")
+                    }
+
+                    // ===== 4) KHÔNG NÉN -> dùng cơ chế cũ =====
+                    if !shouldCompress {
+                        let src = DownloadFileTask().save(
+                            image: fixed,
+                            opt: self.paramsToDic(params: paramsStr) // giữ opt cũ
+                        )
+                        result.data = JSON(src)
+                        self.App21Result(result: result)
+                        return
+                    }
+
+                    // ===== 5) NÉN: resize + compress =====
+                    let resized = fixed.resized(maxSide: maxSide)
+
+                    if let afterResize = resized.jpegData(compressionQuality: 1.0) {
+                        self.logSize("Camera after resize (maxSide=\(Int(maxSide)))", afterResize.count)
+                    }
+
+                    guard let finalData = resized.jpegData(maxKB: maxKB) else {
+                        NSLog("❌ Compress failed -> fallback save original")
+                        let src = DownloadFileTask().save(image: fixed, opt: self.paramsToDic(params: paramsStr))
+                        result.data = JSON(src)
+                        self.App21Result(result: result)
+                        return
+                    }
+
+                    self.logSize("Camera after compress (maxKB=\(maxKB))", finalData.count)
+
+                    // ===== 6) GHI THẲNG finalData RA FILE .JPG (KHÔNG ĐI QUA save(image:) để khỏi encode lại PNG) =====
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "ddMMyyyyHHmmss"
+                    let fileName = "\(pref)-\(formatter.string(from: Date())).\(ext)"
+
+                    let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    let fileURL = docs.appendingPathComponent(fileName)
+
+                    do {
+                        try finalData.write(to: fileURL, options: .atomic)
+
+                        // Log size file thật trên disk
+                        if let attr = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                           let size = attr[.size] as? Int {
+                            self.logSize("Saved file size (real)", size)
+                            NSLog("Saved path: %@", fileURL.path)
+                        }
+
+                        // Trả về đúng format local:///... để PostFileToServer đọc
+                        // (Bạn đang log Upload path dạng local:///var/... nên giữ y hệt)
+                        let localPath = "local://\(fileURL.path)"
+                        result.data = JSON(localPath)
+                        self.App21Result(result: result)
+                        return
+
+                    } catch {
+                        NSLog("❌ Write compressed file error: %@", error.localizedDescription)
+                        // fallback
+                        let src = DownloadFileTask().save(image: fixed, opt: self.paramsToDic(params: paramsStr))
+                        result.data = JSON(src)
+                        self.App21Result(result: result)
+                        return
+                    }
+                }
             })
-        })
+        }
     }
+
     
     var record21: Record21? = nil
     //MARK: - RECORD_AUDIO
