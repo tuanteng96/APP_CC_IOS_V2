@@ -543,44 +543,44 @@ class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognize
             
             //DEV OPEN
             
-            wv.isUserInteractionEnabled = true;
-            wv.scrollView.isScrollEnabled = false;
-            wv.scrollView.bounces = false;
-            wv.scrollView.showsHorizontalScrollIndicator = false;
-            wv.scrollView.showsVerticalScrollIndicator = false;
-    
-            let link = URL(string: "http://192.168.100.165:5001/")!
-            let request = URLRequest(url: link)
-            wv.load(request);
-            view.addSubview(wv);
+//            wv.isUserInteractionEnabled = true;
+//            wv.scrollView.isScrollEnabled = false;
+//            wv.scrollView.bounces = false;
+//            wv.scrollView.showsHorizontalScrollIndicator = false;
+//            wv.scrollView.showsVerticalScrollIndicator = false;
+//    
+//            let link = URL(string: "http://192.168.100.147:5001/")!
+//            let request = URLRequest(url: link)
+//            wv.load(request);
+//            view.addSubview(wv);
             
             // DEV OPEN
             
             // load embed.html
             // DEV HIDDEN
-//            if let path = Bundle.main.path(forResource: HTML_EMBED, ofType: "html"){
-//                let fm = FileManager()
-//                let exists = fm.fileExists(atPath: path)
-//                if(exists){
-//                    let c = fm.contents(atPath: path)
-//                    let cString = NSString(data: c!, encoding: String.Encoding.utf8.rawValue)
-//
-//                    let url = URL(string: domain)
-//
-//                    var html:String = "";
-//                    html +=  cString! as String
-//
-//
-//                    if HTML_EMBED == "embed"{
-//                        wv.isHidden = false;
-//                        wv.loadHTMLString(html, baseURL: url);
-//                    }else{
-//                        wv.isHidden = false;
-//                        wv.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
-//                    }
-//                    wv.alpha = 1
-//                }
-//            }
+            if let path = Bundle.main.path(forResource: HTML_EMBED, ofType: "html"){
+                let fm = FileManager()
+                let exists = fm.fileExists(atPath: path)
+                if(exists){
+                    let c = fm.contents(atPath: path)
+                    let cString = NSString(data: c!, encoding: String.Encoding.utf8.rawValue)
+
+                    let url = URL(string: domain)
+
+                    var html:String = "";
+                    html +=  cString! as String
+
+
+                    if HTML_EMBED == "embed"{
+                        wv.isHidden = false;
+                        wv.loadHTMLString(html, baseURL: url);
+                    }else{
+                        wv.isHidden = false;
+                        wv.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
+                    }
+                    wv.alpha = 1
+                }
+            }
             // DEV HIDDEN
                     
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(notification:)), name: UIResponder.keyboardWillHideNotification , object:nil)
@@ -724,6 +724,11 @@ class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognize
             var configuration = PHPickerConfiguration()
             configuration.selectionLimit =  0
             configuration.filter = .images
+            
+            if #available(iOS 15.0, *) {
+                configuration.selection = .ordered   // ✅ đảm bảo thứ tự theo user chọn
+            }
+            
             let picker = PHPickerViewController(configuration: configuration)
             picker.delegate = self
             self.completionPickImageHandler = completion
@@ -753,48 +758,59 @@ class ViewController: UIViewController,WKScriptMessageHandler,UIGestureRecognize
     @available(iOS 14.0, *)
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true, completion: nil)
+
         let dispatchGroup = DispatchGroup()
-        var imageUrls: [URL] = []
-        
-        for result in results {
+
+        // Lưu theo index để giữ đúng thứ tự chọn
+        var indexedUrls: [(Int, URL)] = []
+        indexedUrls.reserveCapacity(results.count)
+
+        for (idx, result) in results.enumerated() {
             if result.itemProvider.canLoadObject(ofClass: UIImage.self) {
                 dispatchGroup.enter()
+
                 result.itemProvider.loadObject(ofClass: UIImage.self) { (object, error) in
                     defer { dispatchGroup.leave() }
-                    
+
                     if let error = error {
                         print("Error loading image: \(error.localizedDescription)")
                         return
                     }
-                    
+
                     guard let image = object as? UIImage else {
                         print("Loaded object is not UIImage")
                         return
                     }
-                    
+
                     // Sửa orientation
                     let fixedImage = image.fixedOrientation()
-                    
-                    // Ghi vào file tạm trong Document directory
-                    if let imageData = fixedImage.jpegData(compressionQuality: 1.0) {
-                        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                        let fileName = UUID().uuidString + ".jpg"
-                        let destinationURL = documentsDirectory.appendingPathComponent(fileName)
-                        
-                        do {
-                            try imageData.write(to: destinationURL)
-                            imageUrls.append(destinationURL)
-                            print("Saved image to: \(destinationURL)")
-                        } catch {
-                            print("Error saving image: \(error.localizedDescription)")
-                        }
+
+                    guard let imageData = fixedImage.jpegData(compressionQuality: 1.0) else {
+                        print("Cannot convert image to JPEG data")
+                        return
+                    }
+
+                    let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    let fileName = UUID().uuidString + ".jpg"
+                    let destinationURL = documentsDirectory.appendingPathComponent(fileName)
+
+                    do {
+                        try imageData.write(to: destinationURL, options: .atomic)
+
+                        // ✅ append kèm index
+                        indexedUrls.append((idx, destinationURL))
+                        print("Saved image to: \(destinationURL)")
+                    } catch {
+                        print("Error saving image: \(error.localizedDescription)")
                     }
                 }
             }
         }
-        
+
         dispatchGroup.notify(queue: .main) {
-            self.completionPickImageHandler?(imageUrls)
+            // ✅ sort theo idx để đúng thứ tự user chọn
+            let ordered = indexedUrls.sorted { $0.0 < $1.0 }.map { $0.1 }
+            self.completionPickImageHandler?(ordered)
         }
     }
 
